@@ -35,6 +35,26 @@ stdout with columns:
 
 Adjust CSS selectors (`select_one`, `select`) according to the actual HTML structure after inspecting the Odoo pages in a browser.
 
+## Docker
+
+Build the image:
+
+```
+make docker-build
+```
+
+Run the scraper in a container, writing results to `scraped_apps.csv` in the current directory:
+
+```
+make docker-run
+```
+
+You can customize the behavior with environment variables. For example, to run with a visible browser and save to a different file:
+
+```
+docker run --rm -e HEADLESS=0 -e CSV_PATH=/data/apps.csv -v $(pwd):/data odoo-store-scraper
+```
+
 ## Cleanup
 
 Remove the virtual environment:

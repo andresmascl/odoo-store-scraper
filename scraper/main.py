@@ -123,7 +123,9 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
     return pd.DataFrame(records)
 
 def main():
-    df = scrape_all_apps()
+    headless = os.environ.get("HEADLESS", "1") != "0"
+    csv_path = os.environ.get("CSV_PATH", "scraped_apps.csv")
+    df = scrape_all_apps(headless=headless, csv_path=csv_path)
     print(df)
 
 if __name__ == "__main__":
