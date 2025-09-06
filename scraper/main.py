@@ -1,5 +1,6 @@
 import pandas as pd
 from playwright.sync_api import sync_playwright
+from tqdm import tqdm
 
 BASE_URL = (
     "https://apps.odoo.com/apps/modules/browse/"
@@ -42,30 +43,40 @@ def get_lines_of_code(app_url: str, context) -> str:
     page.close()
     return lines_of_code
 
-def scrape_all_apps() -> pd.DataFrame:
+def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
+    """Scrape summary information for all paid apps.
+
+    Args:
+        headless: Whether to run the browser in headless mode.
+    """
     records = []
     # Launch Firefox in headless mode for environments without a display
     with sync_playwright() as playwright:
-        browser = playwright.firefox.launch(headless=True)
+        browser = playwright.firefox.launch(headless=headless)
         # Ignore HTTPS certificate issues that may appear in automated environments
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
 
         total_pages = get_total_pages(page)
 
-        for current_page in range(1, total_pages + 1):
-            page.goto(BASE_URL.format(page=current_page))
-            # Capture a screenshot on the first page to verify visibility
-            if current_page == 1:
-                page.screenshot(path="page1.png")
-            cards = page.locator("div.card.app")
-            count = cards.count()
+        with tqdm(total=total_pages, desc="Scraping pages") as pbar:
+            for current_page in range(1, total_pages + 1):
+                page.goto(BASE_URL.format(page=current_page))
+                # Capture a screenshot on the first page to verify visibility
+                if current_page == 1:
+                    page.screenshot(path="page1.png")
+                cards = page.locator("div.card.app")
+                count = cards.count()
 
-            for i in range(count):
-                card = cards.nth(i)
-                info = parse_app_summary(card)
-                info["lines of code"] = get_lines_of_code(info["app url"], context)
-                records.append(info)
+                for i in range(count):
+                    card = cards.nth(i)
+                    info = parse_app_summary(card)
+                    info["lines of code"] = get_lines_of_code(
+                        info["app url"], context
+                    )
+                    records.append(info)
+
+                pbar.update(1)
 
         context.close()
         browser.close()
