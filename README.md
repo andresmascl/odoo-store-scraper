@@ -18,7 +18,9 @@ Execute the scraper:
 make run
 ```
 
-The output is a pandas DataFrame printed to stdout with columns:
+While running, a file `scraped_apps.csv` is updated after each page so you can
+inspect progress live. The script still prints the final pandas DataFrame to
+stdout with columns:
 
 - app name
 - app description
