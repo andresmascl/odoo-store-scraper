@@ -1,5 +1,8 @@
+import time
+
 import pandas as pd
 from playwright.sync_api import sync_playwright
+from playwright._impl._errors import TimeoutError
 from tqdm import tqdm
 
 BASE_URL = (
@@ -35,6 +38,7 @@ def parse_app_summary(card) -> dict:
 def get_lines_of_code(app_url: str, context) -> str:
     """Visit app detail page and scrape lines-of-code metric."""
     page = context.new_page()
+    page.set_default_navigation_timeout(60000)
     page.goto(app_url)
     loc_tag = page.locator("span:has-text('Lines of Code')")
     lines_of_code = (
@@ -56,12 +60,26 @@ def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
         # Ignore HTTPS certificate issues that may appear in automated environments
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
+        page.set_default_navigation_timeout(60000)
 
         total_pages = get_total_pages(page)
 
         with tqdm(total=total_pages, desc="Scraping pages") as pbar:
             for current_page in range(1, total_pages + 1):
-                page.goto(BASE_URL.format(page=current_page))
+                success = False
+                for _ in range(3):
+                    try:
+                        page.goto(BASE_URL.format(page=current_page))
+                        success = True
+                        break
+                    except TimeoutError:
+                        time.sleep(5)
+                if not success:
+                    print(
+                        f"Warning: Failed to load page {current_page} after multiple attempts. Skipping."
+                    )
+                    pbar.update(1)
+                    continue
                 # Capture a screenshot on the first page to verify visibility
                 if current_page == 1:
                     page.screenshot(path="page1.png")
