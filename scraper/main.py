@@ -9,8 +9,11 @@ BASE_URL = (
 def get_total_pages(page) -> int:
     """Fetch first page and read pagination for total page count."""
     page.goto(BASE_URL.format(page=1))
-    last_page_link = page.locator("ul.pagination li:last-child a")
-    total_pages = int(last_page_link.inner_text().strip())
+    # The last pagination entry is usually "Next", so grab the second to last
+    page.wait_for_selector("ul.pagination li:nth-last-child(2) a")
+    last_page_link = page.locator("ul.pagination li:nth-last-child(2) a")
+    text = last_page_link.inner_text().strip()
+    total_pages = int("".join(filter(str.isdigit, text)))
     return total_pages
 
 def parse_app_summary(card) -> dict:
@@ -41,10 +44,11 @@ def get_lines_of_code(app_url: str, context) -> str:
 
 def scrape_all_apps() -> pd.DataFrame:
     records = []
-    # Launch Firefox in headful mode for visual debugging
+    # Launch Firefox in headless mode for environments without a display
     with sync_playwright() as playwright:
-        browser = playwright.firefox.launch(headless=False)
-        context = browser.new_context()
+        browser = playwright.firefox.launch(headless=True)
+        # Ignore HTTPS certificate issues that may appear in automated environments
+        context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
 
         total_pages = get_total_pages(page)
