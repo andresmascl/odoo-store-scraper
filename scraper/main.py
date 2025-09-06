@@ -41,8 +41,9 @@ def get_lines_of_code(app_url: str, context) -> str:
 
 def scrape_all_apps() -> pd.DataFrame:
     records = []
-    with sync_playwright() as p:
-        browser = p.firefox.launch(headless=False)
+    # Launch Firefox in headful mode for visual debugging
+    with sync_playwright() as playwright:
+        browser = playwright.firefox.launch(headless=False)
         context = browser.new_context()
         page = context.new_page()
 
@@ -50,6 +51,9 @@ def scrape_all_apps() -> pd.DataFrame:
 
         for current_page in range(1, total_pages + 1):
             page.goto(BASE_URL.format(page=current_page))
+            # Capture a screenshot on the first page to verify visibility
+            if current_page == 1:
+                page.screenshot(path="page1.png")
             cards = page.locator("div.card.app")
             count = cards.count()
 
