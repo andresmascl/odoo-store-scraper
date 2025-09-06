@@ -1,4 +1,5 @@
 import time
+import logging
 import pandas as pd
 from playwright.sync_api import TimeoutError, sync_playwright
 from tqdm import tqdm
@@ -82,8 +83,10 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                     except TimeoutError:
                         time.sleep(RETRY_DELAY_SECONDS)
                 else:
-                    print(
-                        f"Warning: Failed to load page {current_page} after {MAX_NAVIGATION_RETRIES} attempts. Skipping."
+                    logging.warning(
+                        "Failed to load page %s after %s attempts. Skipping.",
+                        current_page,
+                        MAX_NAVIGATION_RETRIES,
                     )
                     pbar.update(1)
                     continue
