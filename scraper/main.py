@@ -1,14 +1,17 @@
 import time
 
 import pandas as pd
-from playwright.sync_api import sync_playwright
-from playwright._impl._errors import TimeoutError
+from playwright.sync_api import TimeoutError, sync_playwright
 from tqdm import tqdm
 
 BASE_URL = (
     "https://apps.odoo.com/apps/modules/browse/"
     "page/{page}?price=Paid&order=Purchases"
 )
+
+DEFAULT_NAVIGATION_TIMEOUT_MS = 60_000
+MAX_NAVIGATION_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
 
 def get_total_pages(page) -> int:
     """Fetch first page and read pagination for total page count."""
@@ -38,7 +41,7 @@ def parse_app_summary(card) -> dict:
 def get_lines_of_code(app_url: str, context) -> str:
     """Visit app detail page and scrape lines-of-code metric."""
     page = context.new_page()
-    page.set_default_navigation_timeout(60000)
+    page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
     page.goto(app_url)
     loc_tag = page.locator("span:has-text('Lines of Code')")
     lines_of_code = (
@@ -60,23 +63,21 @@ def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
         # Ignore HTTPS certificate issues that may appear in automated environments
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
-        page.set_default_navigation_timeout(60000)
+        page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
 
         total_pages = get_total_pages(page)
 
         with tqdm(total=total_pages, desc="Scraping pages") as pbar:
             for current_page in range(1, total_pages + 1):
-                success = False
-                for _ in range(3):
+                for _ in range(MAX_NAVIGATION_RETRIES):
                     try:
                         page.goto(BASE_URL.format(page=current_page))
-                        success = True
                         break
                     except TimeoutError:
-                        time.sleep(5)
-                if not success:
+                        time.sleep(RETRY_DELAY_SECONDS)
+                else:
                     print(
-                        f"Warning: Failed to load page {current_page} after multiple attempts. Skipping."
+                        f"Warning: Failed to load page {current_page} after {MAX_NAVIGATION_RETRIES} attempts. Skipping."
                     )
                     pbar.update(1)
                     continue
