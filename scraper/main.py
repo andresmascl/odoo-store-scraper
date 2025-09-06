@@ -1,9 +1,9 @@
 import time
 import logging
-
 import pandas as pd
 from playwright.sync_api import TimeoutError, sync_playwright
 from tqdm import tqdm
+import os
 
 BASE_URL = (
     "https://apps.odoo.com/apps/modules/browse/"
@@ -51,13 +51,19 @@ def get_lines_of_code(app_url: str, context) -> str:
     page.close()
     return lines_of_code
 
-def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
+def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -> pd.DataFrame:
     """Scrape summary information for all paid apps.
 
     Args:
         headless: Whether to run the browser in headless mode.
+        csv_path: Path where results are incrementally written.
     """
-    records = []
+    records: list[dict] = []
+
+    # Start with a fresh file each run
+    if os.path.exists(csv_path):
+        os.remove(csv_path)
+
     # Launch Firefox in headless mode for environments without a display
     with sync_playwright() as playwright:
         browser = playwright.firefox.launch(headless=headless)
@@ -90,6 +96,7 @@ def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
                 cards = page.locator("div.card.app")
                 count = cards.count()
 
+                page_records: list[dict] = []
                 for i in range(count):
                     card = cards.nth(i)
                     info = parse_app_summary(card)
@@ -97,6 +104,16 @@ def scrape_all_apps(headless: bool = True) -> pd.DataFrame:
                         info["app url"], context
                     )
                     records.append(info)
+                    page_records.append(info)
+
+                df_page = pd.DataFrame(page_records)
+                file_exists = os.path.exists(csv_path)
+                df_page.to_csv(
+                    csv_path,
+                    mode="a",
+                    index=False,
+                    header=not file_exists,
+                )
 
                 pbar.update(1)
 
