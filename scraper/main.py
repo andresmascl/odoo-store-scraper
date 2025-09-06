@@ -2,6 +2,7 @@ import time
 import pandas as pd
 from playwright.sync_api import TimeoutError, sync_playwright
 from tqdm import tqdm
+import os
 
 BASE_URL = (
     "https://apps.odoo.com/apps/modules/browse/"
