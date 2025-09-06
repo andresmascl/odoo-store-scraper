@@ -100,9 +100,17 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                 for i in range(count):
                     card = cards.nth(i)
                     info = parse_app_summary(card)
-                    info["lines of code"] = get_lines_of_code(
-                        info["app url"], context
-                    )
+                    try:
+                        info["lines of code"] = get_lines_of_code(
+                            info["app url"], context
+                        )
+                    except Exception as e:
+                        logging.warning(
+                            "Failed to parse lines of code for %s: %s",
+                            info["app url"],
+                            e,
+                        )
+                        info["lines of code"] = "N/A"
                     records.append(info)
                     page_records.append(info)
 
