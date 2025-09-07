@@ -13,46 +13,103 @@ BASE_URL = (
 DEFAULT_NAVIGATION_TIMEOUT_MS = 60_000
 MAX_NAVIGATION_RETRIES = 3
 RETRY_DELAY_SECONDS = 5
+DESKTOP_UA = (
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+		"AppleWebKit/537.36 (KHTML, like Gecko) "
+		"Chrome/125.0.0.0 Safari/537.36"
+)
 
 def get_total_pages(page) -> int:
-	"""Fetch first page and read pagination for total page count."""
-	page.goto(BASE_URL.format(page=1))
-	# The last pagination entry is usually "Next", so grab the second to last
-	page.wait_for_selector("ul.pagination li:nth-last-child(2) a")
-	last_page_link = page.locator("ul.pagination li:nth-last-child(2) a")
-	text = last_page_link.inner_text().strip()
-	total_pages = int("".join(filter(str.isdigit, text)))
-	
-	print("total pages:", total_pages)
-	
-	return total_pages
+    """Fetch first page and read pagination for total page count."""
+    page.goto(BASE_URL.format(page=1))
+    # The last pagination entry is usually "Next", so grab the second to last
+    page.wait_for_selector("ul.pagination li:nth-last-child(2) a")
+    last_page_link = page.locator("ul.pagination li:nth-last-child(2) a")
+    text = last_page_link.inner_text().strip()
+    total_pages = int("".join(filter(str.isdigit, text)))
+    return total_pages
 
 def parse_app_summary(card) -> dict:
-	"""Extract app info from a listing card on the catalog page."""
-	name = card.locator("h3 a").inner_text().strip()
-	url = "https://apps.odoo.com" + card.locator("h3 a").get_attribute("href")
-	description = card.locator("p.app_description").inner_text().strip()
-	price = card.locator("span.price").inner_text().strip()
-	units_last_month = card.locator("span.badge.sales").inner_text().strip()
-	return {
-			"app name": name,
-			"app description": description,
-			"app url": url,
-			"app price": price,
-			"units sold last month": units_last_month,
-	}
+    """Extract app info from a listing card using current DOM structure.
+
+    - Name: <h5 title="..."><b>...</b></h5>
+    - Price: <span class="oe_currency_value">...</span>
+    - Purchases: <span title="Total Purchases: X, Last month: Y"> X | Y </span>
+    - URL: <a href="/apps/modules/...">...</a>
+    """
+    def safe_text(selector: str) -> str:
+        loc = card.locator(selector).first
+        try:
+            if loc.count() > 0:
+                return (loc.inner_text() or "").strip()
+        except Exception:
+            pass
+        return ""
+
+    def safe_attr(selector: str, attr: str) -> str:
+        loc = card.locator(selector).first
+        try:
+            if loc.count() > 0:
+                val = loc.get_attribute(attr)
+                return val or ""
+        except Exception:
+            pass
+        return ""
+
+    # URL
+    href = safe_attr("a[href*='/apps/modules/']", "href")
+    url = href
+    if url and url.startswith("/"):
+        url = "https://apps.odoo.com" + url
+    elif url and not url.startswith("http"):
+        url = "https://apps.odoo.com" + ("/" if not url.startswith("/") else "") + url
+
+    # Name (prefer the title attribute if present)
+    name = safe_attr("h5[title]", "title") or safe_text("h5 b") or safe_text("h5")
+
+    # Price
+    price = safe_text("span.oe_currency_value")
+
+    # Purchases (parse "total | last")
+    purchases_text = safe_text("span[title^='Total Purchases']") or safe_text("span:has(.fa-shopping-cart)")
+    last_month = ""
+    if purchases_text:
+        parts = [p.strip() for p in purchases_text.split("|")]
+        if len(parts) >= 2:
+            last_month = parts[1]
+
+    # Description if available
+    description = safe_text("p.app_description, .app_description")
+
+    return {
+        "app name": name,
+        "app description": description,
+        "app url": url,
+        "app price": price,
+        "units sold last month": last_month,
+    }
 
 def get_lines_of_code(app_url: str, context) -> str:
-	"""Visit app detail page and scrape lines-of-code metric."""
+	"""Visit app detail page and read 'Lines of code' from the details table.
+
+	Uses a single robust locator and short timeout to avoid halts.
+	"""
 	page = context.new_page()
 	page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
-	page.goto(app_url)
-	loc_tag = page.locator("span:has-text('Lines of Code')")
-	lines_of_code = (
-			loc_tag.locator("xpath=following-sibling::span").first.inner_text().strip()
-	)
-	page.close()
-	return lines_of_code
+	try:
+		page.goto(app_url, wait_until="domcontentloaded")
+		selector = (
+			"table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
+			"td:nth-child(2) span"
+		)
+		loc = page.locator(selector).first
+		try:
+			text = loc.text_content(timeout=2000)
+		except Exception:
+			text = None
+		return (text or "N/A").strip() or "N/A"
+	finally:
+		page.close()
 
 def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -> pd.DataFrame:
 	"""Scrape summary information for all paid apps.
@@ -67,11 +124,21 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 	if os.path.exists(csv_path):
 			os.remove(csv_path)
 
-	# Launch Firefox in headless mode for environments without a display
+	# Launch Firefox
 	with sync_playwright() as playwright:
-			browser = playwright.firefox.launch(headless=headless)
-			# Ignore HTTPS certificate issues that may appear in automated environments
-			context = browser.new_context(ignore_https_errors=True)
+			engine = getattr(playwright, "firefox")
+			browser = engine.launch(headless=headless)
+			# Ignore HTTPS issues and mimic a normal desktop browser to avoid bot heuristics
+			context = browser.new_context(
+					ignore_https_errors=True,
+					user_agent=DESKTOP_UA,
+					locale="en-US",
+					timezone_id="UTC",
+					viewport={"width": 1366, "height": 768},
+					device_scale_factor=1,
+					color_scheme="light",
+					extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+			)
 			page = context.new_page()
 			page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
 
@@ -79,26 +146,42 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 
 			with tqdm(total=total_pages, desc="Scraping pages") as pbar:
 					for current_page in range(1, total_pages + 1):
-							for _ in range(MAX_NAVIGATION_RETRIES):
+							url = BASE_URL.format(page=current_page)
+							success = False
+							for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
 									try:
-											page.goto(BASE_URL.format(page=current_page))
-											# Ensure listing cards are present before proceeding
-											page.wait_for_selector("div.card.app", timeout=DEFAULT_NAVIGATION_TIMEOUT_MS)
-											break
+											# Navigate and wait for DOM content, then a brief idle
+											page.goto(url, wait_until="domcontentloaded")
+											try:
+													page.wait_for_load_state("networkidle", timeout=5000)
+											except Exception:
+													pass
+											# Small scroll to trigger lazy rendering
+											try:
+													page.evaluate("window.scrollBy(0, 200)")
+											except Exception:
+													pass
+											sel = "div.loempia_app_entry.loempia_app_card[data-publish='on']"
+											try:
+												page.wait_for_selector(sel, state="visible", timeout=5000)
+												success = True
+												break
+											except Exception:
+												logging.warning(
+														"No cards detected on page %s after %s attempts. Skipping.",
+														current_page,
+														MAX_NAVIGATION_RETRIES,
+													)												
+												continue
 									except TimeoutError:
-											time.sleep(RETRY_DELAY_SECONDS)
-							else:
-									logging.warning(
-											"Failed to load page %s after %s attempts. Skipping.",
-											current_page,
-											MAX_NAVIGATION_RETRIES,
-									)
-									pbar.update(1)
-									continue
-							# Capture a screenshot on the first page to verify visibility
-							if current_page == 1:
-									page.screenshot(path="page1.png")
-							cards = page.locator("div.card.app")
+											pass
+									time.sleep(RETRY_DELAY_SECONDS)
+							# Prefer new loempia app card classes, with fallbacks
+							cards = page.locator(
+									"div.loempia_app_entry.loempia_app_card[data-publish='on'], "
+									"div.loempia_app_entry.loempia_app_card, "
+									"div.card.app, div.card:has(h3 a)"
+							)
 							count = cards.count()
 							if count == 0:
 									logging.warning(
@@ -149,7 +232,7 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 	return pd.DataFrame(records)
 
 def main():
-	headless = os.environ.get("HEADLESS", "1") != "0"
+	headless = os.environ.get("HEADLESS", "0") != "0"
 	csv_path = os.environ.get("CSV_PATH", "scraped_apps.csv")
 	df = scrape_all_apps(headless=headless, csv_path=csv_path)
 	print(df)
