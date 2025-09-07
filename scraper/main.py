@@ -19,6 +19,7 @@ NETWORK_IDLE_WAIT_MS = 1800
 CARD_WAIT_MS = 1800
 # Short locator timeout on detail pages for LOC
 LOC_TIMEOUT_MS = 1000
+ITEMS_PER_PAGE = 20
 DESKTOP_UA = (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -130,13 +131,23 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
         if os.path.exists(csv_path):
                 with open(csv_path, "r", encoding="utf-8") as f:
                         lines = f.readlines()
+                found_tag = False
                 for line in reversed(lines):
                         if line.startswith("#NEXT_PAGE="):
                                 try:
                                         start_page = int(line.split("=", 1)[1])
                                 except ValueError:
                                         start_page = 1
+                                found_tag = True
                                 break
+                if not found_tag and lines:
+                        try:
+                                df_existing = pd.read_csv(csv_path, comment="#")
+                                if not df_existing.empty:
+                                        last_page = len(df_existing) // ITEMS_PER_PAGE
+                                        start_page = last_page + 1
+                        except Exception as e:
+                                logging.warning("Could not infer start page from existing CSV: %s", e)
 
         def _strip_next_page_tag() -> None:
                 if not os.path.exists(csv_path):
