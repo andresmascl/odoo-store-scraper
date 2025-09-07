@@ -20,9 +20,9 @@ CARD_WAIT_MS = 1800
 # Short locator timeout on detail pages for LOC
 LOC_TIMEOUT_MS = 1000
 DESKTOP_UA = (
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-		"AppleWebKit/537.36 (KHTML, like Gecko) "
-		"Chrome/125.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
 )
 
 def get_total_pages(page) -> int:
@@ -96,168 +96,178 @@ def parse_app_summary(card) -> dict:
     }
 
 def get_lines_of_code(app_url: str, context) -> str:
-	"""Visit app detail page and read 'Lines of code' from the details table.
+        """Visit app detail page and read 'Lines of code' from the details table.
 
-	Uses a single robust locator and short timeout to avoid halts.
-	"""
-	page = context.new_page()
-	page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
-	try:
-		page.goto(app_url, wait_until="domcontentloaded")
-		selector = (
-			"table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
-			"td:nth-child(2) span"
-		)
-		loc = page.locator(selector).first
-		try:
-			text = loc.text_content(timeout=LOC_TIMEOUT_MS)
-		except Exception:
-			text = None
-		return (text or "N/A").strip() or "N/A"
-	finally:
-		page.close()
+        Uses a single robust locator and short timeout to avoid halts.
+        """
+        page = context.new_page()
+        page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
+        try:
+                page.goto(app_url, wait_until="domcontentloaded")
+                selector = (
+                        "table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
+                        "td:nth-child(2) span"
+                )
+                loc = page.locator(selector).first
+                try:
+                        text = loc.text_content(timeout=LOC_TIMEOUT_MS)
+                except Exception:
+                        text = None
+                return (text or "N/A").strip() or "N/A"
+        finally:
+                page.close()
 
 def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -> pd.DataFrame:
-	"""Scrape summary information for all paid apps.
+        """Scrape summary information for all paid apps.
 
-	Args:
-		headless: Whether to run the browser in headless mode.
-		csv_path: Path where results are incrementally written.
-	"""
-	records: list[dict] = []
+        Args:
+                headless: Whether to run the browser in headless mode.
+                csv_path: Path where results are incrementally written.
+        """
+        records: list[dict] = []
 
-	start_page = 1
-	if os.path.exists(csv_path):
-		with open(csv_path, "r+", encoding="utf-8") as f:
-			lines = f.readlines()
-			if lines and lines[-1].startswith("#NEXT_PAGE="):
-				try:
-					start_page = int(lines[-1].split("=", 1)[1])
-				except ValueError:
-					start_page = 1
-				f.seek(0)
-				f.truncate()
-				f.writelines(lines[:-1])
+        start_page = 1
+        if os.path.exists(csv_path):
+                with open(csv_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                for line in reversed(lines):
+                        if line.startswith("#NEXT_PAGE="):
+                                try:
+                                        start_page = int(line.split("=", 1)[1])
+                                except ValueError:
+                                        start_page = 1
+                                break
 
-	def _strip_next_page_tag() -> None:
-		if not os.path.exists(csv_path):
-			return
-		with open(csv_path, "r+", encoding="utf-8") as f:
-			lines = f.readlines()
-			if lines and lines[-1].startswith("#NEXT_PAGE="):
-				f.seek(0)
-				f.truncate()
-				f.writelines(lines[:-1])
+        def _strip_next_page_tag() -> None:
+                if not os.path.exists(csv_path):
+                        return
+                with open(csv_path, "r+", encoding="utf-8") as f:
+                        lines = f.readlines()
+                idx = None
+                for i in range(len(lines) - 1, -1, -1):
+                        if lines[i].startswith("#NEXT_PAGE="):
+                                idx = i
+                                break
+                if idx is not None:
+                        del lines[idx]
+                        with open(csv_path, "w", encoding="utf-8") as f:
+                                f.writelines(lines)
 
-	# Launch Firefox
-	with sync_playwright() as playwright:
-			engine = getattr(playwright, "firefox")
-			browser = engine.launch(headless=headless)
-			# Ignore HTTPS issues and mimic a normal desktop browser to avoid bot heuristics
-			context = browser.new_context(
-				ignore_https_errors=True,
-				user_agent=DESKTOP_UA,
-				locale="en-US",
-				timezone_id="UTC",
-				viewport={"width": 1366, "height": 768},
-				device_scale_factor=1,
-				color_scheme="light",
-				extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-			)
-			page = context.new_page()
-			page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
+        def _write_next_page_tag(page_no: int) -> None:
+                with open(csv_path, "a", encoding="utf-8") as f:
+                        f.write(f"#NEXT_PAGE={page_no}\n")
 
-			total_pages = get_total_pages(page)
+        # Launch Firefox
+        with sync_playwright() as playwright:
+                        engine = getattr(playwright, "firefox")
+                        browser = engine.launch(headless=headless)
+                        # Ignore HTTPS issues and mimic a normal desktop browser to avoid bot heuristics
+                        context = browser.new_context(
+                                ignore_https_errors=True,
+                                user_agent=DESKTOP_UA,
+                                locale="en-US",
+                                timezone_id="UTC",
+                                viewport={"width": 1366, "height": 768},
+                                device_scale_factor=1,
+                                color_scheme="light",
+                                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                        )
+                        page = context.new_page()
+                        page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
 
-			with tqdm(total=total_pages, desc="Scraping pages") as pbar:
-				for current_page in range(start_page, total_pages + 1):
-					_strip_next_page_tag()
-					url = BASE_URL.format(page=current_page)
-					success = False
-					for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
-						try:
-							# Navigate and wait for DOM content, then a brief idle
-							page.goto(url, wait_until="domcontentloaded")
-							try:
-								page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_WAIT_MS)
-							except Exception:
-								pass
-								# Small scroll to trigger lazy rendering
-								try:
-									page.evaluate("window.scrollBy(0, 200)")
-								except Exception:
-									pass
-							sel = "div.loempia_app_entry.loempia_app_card[data-publish='on']"
-							try:
-								page.wait_for_selector(sel, state="visible", timeout=CARD_WAIT_MS)
-								success = True
-								break
-							except Exception:
-								logging.warning(
-									"No cards detected on page %s after %s attempts. Skipping.",
-									current_page,
-									MAX_NAVIGATION_RETRIES,
-									)												
-								continue
-						except TimeoutError:
-							pass
-							time.sleep(RETRY_DELAY_SECONDS)
-					# Prefer new loempia app card classes, with fallbacks
-					cards = page.locator(
-						"div.loempia_app_entry.loempia_app_card[data-publish='on']"
-					)
-					count = cards.count()
-					if count == 0:
-						logging.warning(
-							"No app cards found on page %s. Capturing screenshot.",
-							current_page,
-						)
-						try:
-							page.screenshot(path=f"page_{current_page}_empty.png", full_page=True)
-						except Exception:
-								pass
-						pbar.update(1)
-						continue
+                        total_pages = get_total_pages(page)
 
-					page_records: list[dict] = []
-					for i in range(count):
-						card = cards.nth(i)
-						info = parse_app_summary(card)
-						try:
-							info["lines of code"] = get_lines_of_code(
-								info["app url"], context
-							)
-						except Exception as e:
-							logging.warning(
-									"Failed to parse lines of code for %s: %s",
-									info["app url"],
-									e,
-								)
-							info["lines of code"] = "N/A"
-						records.append(info)
-						page_records.append(info)
+                        with tqdm(total=total_pages, desc="Scraping pages") as pbar:
+                                for current_page in range(start_page, total_pages + 1):
+                                        existing_file = os.path.exists(csv_path)
+                                        _strip_next_page_tag()
+                                        _write_next_page_tag(current_page)
+                                        url = BASE_URL.format(page=current_page)
+                                        success = False
+                                        for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
+                                                try:
+                                                        # Navigate and wait for DOM content, then a brief idle
+                                                        page.goto(url, wait_until="domcontentloaded")
+                                                        try:
+                                                                page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_WAIT_MS)
+                                                        except Exception:
+                                                                pass
+                                                                # Small scroll to trigger lazy rendering
+                                                                try:
+                                                                        page.evaluate("window.scrollBy(0, 200)")
+                                                                except Exception:
+                                                                        pass
+                                                        sel = "div.loempia_app_entry.loempia_app_card[data-publish='on']"
+                                                        try:
+                                                                page.wait_for_selector(sel, state="visible", timeout=CARD_WAIT_MS)
+                                                                success = True
+                                                                break
+                                                        except Exception:
+                                                                logging.warning(
+                                                                        "No cards detected on page %s after %s attempts. Skipping.",
+                                                                        current_page,
+                                                                        MAX_NAVIGATION_RETRIES,
+                                                                        )                                                                                                
+                                                                continue
+                                                except TimeoutError:
+                                                        pass
+                                                        time.sleep(RETRY_DELAY_SECONDS)
+                                        # Prefer new loempia app card classes, with fallbacks
+                                        cards = page.locator(
+                                                "div.loempia_app_entry.loempia_app_card[data-publish='on']"
+                                        )
+                                        count = cards.count()
+                                        if count == 0:
+                                                logging.warning(
+                                                        "No app cards found on page %s. Capturing screenshot.",
+                                                        current_page,
+                                                )
+                                                try:
+                                                        page.screenshot(path=f"page_{current_page}_empty.png", full_page=True)
+                                                except Exception:
+                                                                pass
+                                                pbar.update(1)
+                                                continue
 
-					df_page = pd.DataFrame(page_records)
-					file_exists = os.path.exists(csv_path)
-					# Write with a context manager to ensure the file closes after each save
-					with open(csv_path, "a", encoding="utf-8", newline="") as f:
-						df_page.to_csv(
-							f,
-							index=False,
-							header=(start_page == 1 and not file_exists),
-						)
-						f.write(f"#NEXT_PAGE={current_page + 1}\n")
-					pbar.update(1)
+                                        page_records: list[dict] = []
+                                        for i in range(count):
+                                                card = cards.nth(i)
+                                                info = parse_app_summary(card)
+                                                try:
+                                                        info["lines of code"] = get_lines_of_code(
+                                                                info["app url"], context
+                                                        )
+                                                except Exception as e:
+                                                        logging.warning(
+                                                                        "Failed to parse lines of code for %s: %s",
+                                                                        info["app url"],
+                                                                        e,
+                                                                )
+                                                        info["lines of code"] = "N/A"
+                                                records.append(info)
+                                                page_records.append(info)
 
-			context.close()
-			browser.close()
+                                        df_page = pd.DataFrame(page_records)
+                                        # Write with a context manager to ensure the file closes after each save
+                                        with open(csv_path, "a", encoding="utf-8", newline="") as f:
+                                                df_page.to_csv(
+                                                        f,
+                                                        index=False,
+                                                        header=(current_page == start_page == 1 and not existing_file),
+                                                )
+                                        _strip_next_page_tag()
+                                        _write_next_page_tag(current_page + 1)
+                                        pbar.update(1)
 
-	return pd.DataFrame(records)
+                        context.close()
+                        browser.close()
+
+        return pd.DataFrame(records)
 
 def main():
-	headless = os.environ.get("HEADLESS", "1") != "0"
-	csv_path = os.environ.get("CSV_PATH", "scraped_apps.csv")
-	df = scrape_all_apps(headless=headless, csv_path=csv_path)
+        headless = os.environ.get("HEADLESS", "1") != "0"
+        csv_path = os.environ.get("CSV_PATH", "scraped_apps.csv")
+        df = scrape_all_apps(headless=headless, csv_path=csv_path)
 
 if __name__ == "__main__":
-	main()
+        main()
