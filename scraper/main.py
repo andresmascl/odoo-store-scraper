@@ -144,6 +144,9 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                 return 1
 
         start_page = _read_start_page()
+        # Initialize progress so the counter reflects the last scraped page
+        # when resuming from a sidecar (e.g., sidecar=5 -> shows 5/total).
+        initial_progress = start_page if os.path.exists(sidecar_path) else 0
 
         def _write_sidecar(page_no: int) -> None:
                 """Atomically write next page number to sidecar file."""
@@ -179,7 +182,7 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 
                         total_pages = get_total_pages(page)
 
-                        with tqdm(total=total_pages, desc="Scraping pages") as pbar:
+                        with tqdm(total=total_pages, desc="Scraping pages", initial=initial_progress) as pbar:
                                 for current_page in range(start_page, total_pages + 1):
                                         existing_file = os.path.exists(csv_path)
                                         url = BASE_URL.format(page=current_page)
