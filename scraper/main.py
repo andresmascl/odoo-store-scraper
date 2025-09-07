@@ -11,8 +11,14 @@ BASE_URL = (
 )
 
 DEFAULT_NAVIGATION_TIMEOUT_MS = 60_000
-MAX_NAVIGATION_RETRIES = 3
-RETRY_DELAY_SECONDS = 5
+# Keep page turns snappy to advance the progress bar
+MAX_NAVIGATION_RETRIES = 1
+RETRY_DELAY_SECONDS = 0
+# Short waits for network idle and card visibility
+NETWORK_IDLE_WAIT_MS = 1200
+CARD_WAIT_MS = 1200
+# Short locator timeout on detail pages for LOC
+LOC_TIMEOUT_MS = 700
 DESKTOP_UA = (
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 		"AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -104,7 +110,7 @@ def get_lines_of_code(app_url: str, context) -> str:
 		)
 		loc = page.locator(selector).first
 		try:
-			text = loc.text_content(timeout=2000)
+			text = loc.text_content(timeout=LOC_TIMEOUT_MS)
 		except Exception:
 			text = None
 		return (text or "N/A").strip() or "N/A"
@@ -145,86 +151,83 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 			total_pages = get_total_pages(page)
 
 			with tqdm(total=total_pages, desc="Scraping pages") as pbar:
-					for current_page in range(1, total_pages + 1):
-							url = BASE_URL.format(page=current_page)
-							success = False
-							for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
-									try:
-											# Navigate and wait for DOM content, then a brief idle
-											page.goto(url, wait_until="domcontentloaded")
-											try:
-													page.wait_for_load_state("networkidle", timeout=5000)
-											except Exception:
-													pass
-											# Small scroll to trigger lazy rendering
-											try:
-													page.evaluate("window.scrollBy(0, 200)")
-											except Exception:
-													pass
-											sel = "div.loempia_app_entry.loempia_app_card[data-publish='on']"
-											try:
-												page.wait_for_selector(sel, state="visible", timeout=5000)
-												success = True
-												break
-											except Exception:
-												logging.warning(
-														"No cards detected on page %s after %s attempts. Skipping.",
-														current_page,
-														MAX_NAVIGATION_RETRIES,
-													)												
-												continue
-									except TimeoutError:
-											pass
-									time.sleep(RETRY_DELAY_SECONDS)
-							# Prefer new loempia app card classes, with fallbacks
-							cards = page.locator(
-									"div.loempia_app_entry.loempia_app_card[data-publish='on'], "
-									"div.loempia_app_entry.loempia_app_card, "
-									"div.card.app, div.card:has(h3 a)"
+				for current_page in range(1, total_pages + 1):
+					url = BASE_URL.format(page=current_page)
+					success = False
+					for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
+						try:
+							# Navigate and wait for DOM content, then a brief idle
+							page.goto(url, wait_until="domcontentloaded")
+							try:
+								page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_WAIT_MS)
+							except Exception:
+								pass
+								# Small scroll to trigger lazy rendering
+								try:
+									page.evaluate("window.scrollBy(0, 200)")
+								except Exception:
+									pass
+							sel = "div.loempia_app_entry.loempia_app_card[data-publish='on']"
+							try:
+								page.wait_for_selector(sel, state="visible", timeout=CARD_WAIT_MS)
+								success = True
+								break
+							except Exception:
+								logging.warning(
+									"No cards detected on page %s after %s attempts. Skipping.",
+									current_page,
+									MAX_NAVIGATION_RETRIES,
+									)												
+								continue
+						except TimeoutError:
+							pass
+							time.sleep(RETRY_DELAY_SECONDS)
+					# Prefer new loempia app card classes, with fallbacks
+					cards = page.locator(
+						"div.loempia_app_entry.loempia_app_card[data-publish='on']"
+					)
+					count = cards.count()
+					if count == 0:
+						logging.warning(
+							"No app cards found on page %s. Capturing screenshot.",
+							current_page,
+						)
+						try:
+							page.screenshot(path=f"page_{current_page}_empty.png", full_page=True)
+						except Exception:
+								pass
+						pbar.update(1)
+						continue
+
+					page_records: list[dict] = []
+					for i in range(count):
+						card = cards.nth(i)
+						info = parse_app_summary(card)
+						try:
+							info["lines of code"] = get_lines_of_code(
+								info["app url"], context
 							)
-							count = cards.count()
-							if count == 0:
-									logging.warning(
-											"No app cards found on page %s. Capturing screenshot.",
-											current_page,
-									)
-									try:
-											page.screenshot(path=f"page_{current_page}_empty.png", full_page=True)
-									except Exception:
-											pass
-									pbar.update(1)
-									continue
+						except Exception as e:
+							logging.warning(
+									"Failed to parse lines of code for %s: %s",
+									info["app url"],
+									e,
+								)
+							info["lines of code"] = "N/A"
+						records.append(info)
+						page_records.append(info)
 
-							page_records: list[dict] = []
-							for i in range(count):
-									card = cards.nth(i)
-									info = parse_app_summary(card)
-									try:
-											info["lines of code"] = get_lines_of_code(
-													info["app url"], context
-											)
-									except Exception as e:
-											logging.warning(
-													"Failed to parse lines of code for %s: %s",
-													info["app url"],
-													e,
-											)
-											info["lines of code"] = "N/A"
-									records.append(info)
-									page_records.append(info)
+					df_page = pd.DataFrame(page_records)
+					file_exists = os.path.exists(csv_path)
+					# Write with a context manager to ensure the file closes after each save
+					with open(csv_path, "a", encoding="utf-8", newline="") as f:
+						df_page.to_csv(
+							f,
+							index=False,
+							header=not file_exists,
+						)
 
-							df_page = pd.DataFrame(page_records)
-							file_exists = os.path.exists(csv_path)
-							# Write with a context manager to ensure the file closes after each save
-							with open(csv_path, "a", encoding="utf-8", newline="") as f:
-									df_page.to_csv(
-											f,
-											index=False,
-											header=not file_exists,
-									)
-							print(df_page)
-
-							pbar.update(1)
+					pbar.update(1)
 
 			context.close()
 			browser.close()
@@ -232,10 +235,9 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 	return pd.DataFrame(records)
 
 def main():
-	headless = os.environ.get("HEADLESS", "0") != "0"
+	headless = os.environ.get("HEADLESS", "1") != "0"
 	csv_path = os.environ.get("CSV_PATH", "scraped_apps.csv")
 	df = scrape_all_apps(headless=headless, csv_path=csv_path)
-	print(df)
 
 if __name__ == "__main__":
 	main()
