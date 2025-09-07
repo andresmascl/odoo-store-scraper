@@ -126,9 +126,28 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 	"""
 	records: list[dict] = []
 
-	# Start with a fresh file each run
+	start_page = 1
 	if os.path.exists(csv_path):
-			os.remove(csv_path)
+		with open(csv_path, "r+", encoding="utf-8") as f:
+			lines = f.readlines()
+			if lines and lines[-1].startswith("#NEXT_PAGE="):
+				try:
+					start_page = int(lines[-1].split("=", 1)[1])
+				except ValueError:
+					start_page = 1
+				f.seek(0)
+				f.truncate()
+				f.writelines(lines[:-1])
+
+	def _strip_next_page_tag() -> None:
+		if not os.path.exists(csv_path):
+			return
+		with open(csv_path, "r+", encoding="utf-8") as f:
+			lines = f.readlines()
+			if lines and lines[-1].startswith("#NEXT_PAGE="):
+				f.seek(0)
+				f.truncate()
+				f.writelines(lines[:-1])
 
 	# Launch Firefox
 	with sync_playwright() as playwright:
@@ -151,7 +170,8 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 			total_pages = get_total_pages(page)
 
 			with tqdm(total=total_pages, desc="Scraping pages") as pbar:
-				for current_page in range(1, total_pages + 1):
+				for current_page in range(start_page, total_pages + 1):
+					_strip_next_page_tag()
 					url = BASE_URL.format(page=current_page)
 					success = False
 					for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
@@ -224,9 +244,9 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 						df_page.to_csv(
 							f,
 							index=False,
-							header=not file_exists,
+							header=(start_page == 1 and not file_exists),
 						)
-
+						f.write(f"#NEXT_PAGE={current_page + 1}\n")
 					pbar.update(1)
 
 			context.close()
