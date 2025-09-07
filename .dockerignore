@@ -1,14 +1,18 @@
+
+# specific files
+Makefile
+README.md
+CONTRIBUTING.md
+
+# file extensions
 .git
 .venv
 __pycache__
 *.pyc
-scraped_apps.csv
 *.xlsx
 *.xlsx#
 *.xls
-Makefile
-README.md
-CONTRIBUTING.md
 .gitignore
 *.csv
 *.next
+.editorconfig
