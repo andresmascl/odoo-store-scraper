@@ -165,7 +165,16 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                 f.writelines(lines)
 
         def _write_next_page_tag(page_no: int) -> None:
-                with open(csv_path, "a", encoding="utf-8") as f:
+                if not os.path.exists(csv_path):
+                        with open(csv_path, "w", encoding="utf-8") as f:
+                                f.write(f"#NEXT_PAGE={page_no}\n")
+                        return
+                with open(csv_path, "r+", encoding="utf-8") as f:
+                        f.seek(0, os.SEEK_END)
+                        if f.tell() > 0:
+                                f.seek(f.tell() - 1)
+                                if f.read(1) != "\n":
+                                        f.write("\n")
                         f.write(f"#NEXT_PAGE={page_no}\n")
 
         # Launch Firefox
@@ -192,7 +201,6 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                 for current_page in range(start_page, total_pages + 1):
                                         existing_file = os.path.exists(csv_path)
                                         _strip_next_page_tag()
-                                        _write_next_page_tag(current_page)
                                         url = BASE_URL.format(page=current_page)
                                         success = False
                                         for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
@@ -266,7 +274,6 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                                         index=False,
                                                         header=(current_page == start_page == 1 and not existing_file),
                                                 )
-                                        _strip_next_page_tag()
                                         _write_next_page_tag(current_page + 1)
                                         pbar.update(1)
 
