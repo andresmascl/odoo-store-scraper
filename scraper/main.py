@@ -12,13 +12,13 @@ BASE_URL = (
 
 DEFAULT_NAVIGATION_TIMEOUT_MS = 60_000
 # Keep page turns snappy to advance the progress bar
-MAX_NAVIGATION_RETRIES = 1
-RETRY_DELAY_SECONDS = 0
+MAX_NAVIGATION_RETRIES = 3
+RETRY_DELAY_SECONDS = 2
 # Short waits for network idle and card visibility
-NETWORK_IDLE_WAIT_MS = 1200
-CARD_WAIT_MS = 1200
+NETWORK_IDLE_WAIT_MS = 1800
+CARD_WAIT_MS = 1800
 # Short locator timeout on detail pages for LOC
-LOC_TIMEOUT_MS = 700
+LOC_TIMEOUT_MS = 1000
 DESKTOP_UA = (
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 		"AppleWebKit/537.36 (KHTML, like Gecko) "
