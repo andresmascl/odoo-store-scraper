@@ -4,6 +4,7 @@ import pandas as pd
 from playwright.sync_api import TimeoutError, sync_playwright
 from tqdm import tqdm
 import os
+import re
 
 BASE_URL = (
     "https://apps.odoo.com/apps/modules/browse/"
@@ -21,9 +22,9 @@ CARD_WAIT_MS = 1800
 LOC_TIMEOUT_MS = 1000
 ITEMS_PER_PAGE = 20
 DESKTOP_UA = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+	"AppleWebKit/537.36 (KHTML, like Gecko) "
+	"Chrome/125.0.0.0 Safari/537.36"
 )
 
 def get_total_pages(page) -> int:
@@ -96,25 +97,57 @@ def parse_app_summary(card) -> dict:
         "units sold last month": last_month,
     }
 
-def get_lines_of_code(app_url: str, context) -> str:
-        """Visit app detail page and read 'Lines of code' from the details table.
+def get_detail_info(app_url: str, context) -> dict:
+        """Visit app detail page and read details like 'Lines of code' and latest supported version.
 
-        Uses a single robust locator and short timeout to avoid halts.
+        Returns a dict with keys:
+        - 'lines of code'
+        - 'last available version'
         """
         page = context.new_page()
         page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
         try:
                 page.goto(app_url, wait_until="domcontentloaded")
-                selector = (
+
+                # Lines of code
+                loc_selector = (
                         "table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
                         "td:nth-child(2) span"
                 )
-                loc = page.locator(selector).first
+                loc = page.locator(loc_selector).first
                 try:
-                        text = loc.text_content(timeout=LOC_TIMEOUT_MS)
+                        loc_text = loc.text_content(timeout=LOC_TIMEOUT_MS)
                 except Exception:
-                        text = None
-                return (text or "N/A").strip() or "N/A"
+                        loc_text = None
+                lines_of_code = (loc_text or "N/A").strip() or "N/A"
+
+                # Latest supported version: collect all badge texts in the details table that look like versions
+                try:
+                        badge_texts = page.locator("table.loempia_app_table .badge").all_text_contents()
+                except Exception:
+                        badge_texts = []
+
+                versions: list[tuple[int, int, str]] = []
+                for t in badge_texts:
+                        if not t:
+                                continue
+                        s = t.strip()
+                        m = re.fullmatch(r"(\d+)\.(\d+)", s)
+                        if m:
+                                major = int(m.group(1))
+                                minor = int(m.group(2))
+                                versions.append((major, minor, s))
+
+                if versions:
+                        latest = max(versions, key=lambda x: (x[0], x[1]))
+                        latest_version = latest[2]
+                else:
+                        latest_version = "N/A"
+
+                return {
+                        "lines of code": lines_of_code,
+                        "last available version": latest_version,
+                }
         finally:
                 page.close()
 
@@ -251,16 +284,16 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                                 card = cards.nth(i)
                                                 info = parse_app_summary(card)
                                                 try:
-                                                        info["lines of code"] = get_lines_of_code(
-                                                                info["app url"], context
-                                                        )
+                                                        details = get_detail_info(info["app url"], context)
+                                                        info.update(details)
                                                 except Exception as e:
                                                         logging.warning(
-                                                                        "Failed to parse lines of code for %s: %s",
+                                                                        "Failed to parse details for %s: %s",
                                                                         info["app url"],
                                                                         e,
                                                                 )
-                                                        info["lines of code"] = "N/A"
+                                                        info["lines of code"] = info.get("lines of code", "N/A")
+                                                        info["last available version"] = info.get("last available version", "N/A")
                                                 records.append(info)
                                                 page_records.append(info)
 

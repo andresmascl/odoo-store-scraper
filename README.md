@@ -38,6 +38,7 @@ inference is performed from CSV rows.
 - app price
 - units sold last month
 - lines of code
+ - last available version
 
 Adjust CSS selectors (`select_one`, `select`) according to the actual HTML structure after inspecting the Odoo pages in a browser.
 
