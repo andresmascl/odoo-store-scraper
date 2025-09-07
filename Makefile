@@ -11,6 +11,7 @@ $(PYTHON): requirements.txt
 	python3 -m venv $(VENV)
 	$(PYTHON) -m pip install -r requirements.txt
 	$(PLAYWRIGHT) install-deps
+	$(PLAYWRIGHT) install
 
 
 clean:
