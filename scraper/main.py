@@ -128,54 +128,36 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
         records: list[dict] = []
 
         start_page = 1
-        if os.path.exists(csv_path):
-                with open(csv_path, "r", encoding="utf-8") as f:
-                        lines = f.readlines()
-                found_tag = False
-                for line in reversed(lines):
-                        if line.startswith("#NEXT_PAGE="):
-                                try:
-                                        start_page = int(line.split("=", 1)[1])
-                                except ValueError:
-                                        start_page = 1
-                                found_tag = True
-                                break
-                if not found_tag and lines:
+        # Sidecar progress file lives next to the CSV and is named 'scrape.next'
+        sidecar_path = os.path.join(os.path.dirname(os.path.abspath(csv_path)), "scrape.next")
+
+        def _read_start_page() -> int:
+                # Only use sidecar file. If missing or invalid, start from 1.
+                if os.path.exists(sidecar_path):
                         try:
-                                df_existing = pd.read_csv(csv_path, comment="#")
-                                if not df_existing.empty:
-                                        last_page = len(df_existing) // ITEMS_PER_PAGE
-                                        start_page = last_page + 1
+                                with open(sidecar_path, "r", encoding="utf-8") as f:
+                                        txt = (f.read() or "").strip()
+                                if txt.isdigit():
+                                        return int(txt)
                         except Exception as e:
-                                logging.warning("Could not infer start page from existing CSV: %s", e)
+                                logging.warning("Failed reading sidecar %s: %s", sidecar_path, e)
+                return 1
 
-        def _strip_next_page_tag() -> None:
-                if not os.path.exists(csv_path):
-                        return
-                with open(csv_path, "r+", encoding="utf-8") as f:
-                        lines = f.readlines()
-                idx = None
-                for i in range(len(lines) - 1, -1, -1):
-                        if lines[i].startswith("#NEXT_PAGE="):
-                                idx = i
-                                break
-                if idx is not None:
-                        del lines[idx]
-                        with open(csv_path, "w", encoding="utf-8") as f:
-                                f.writelines(lines)
+        start_page = _read_start_page()
 
-        def _write_next_page_tag(page_no: int) -> None:
-                if not os.path.exists(csv_path):
-                        with open(csv_path, "w", encoding="utf-8") as f:
-                                f.write(f"#NEXT_PAGE={page_no}\n")
-                        return
-                with open(csv_path, "r+", encoding="utf-8") as f:
-                        f.seek(0, os.SEEK_END)
-                        if f.tell() > 0:
-                                f.seek(f.tell() - 1)
-                                if f.read(1) != "\n":
-                                        f.write("\n")
-                        f.write(f"#NEXT_PAGE={page_no}\n")
+        def _write_sidecar(page_no: int) -> None:
+                """Atomically write next page number to sidecar file."""
+                tmp = sidecar_path + ".tmp"
+                try:
+                        with open(tmp, "w", encoding="utf-8") as f:
+                                f.write(str(page_no).strip() + "\n")
+                        os.replace(tmp, sidecar_path)
+                finally:
+                        try:
+                                if os.path.exists(tmp):
+                                        os.remove(tmp)
+                        except Exception:
+                                pass
 
         # Launch Firefox
         with sync_playwright() as playwright:
@@ -200,7 +182,6 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                         with tqdm(total=total_pages, desc="Scraping pages") as pbar:
                                 for current_page in range(start_page, total_pages + 1):
                                         existing_file = os.path.exists(csv_path)
-                                        _strip_next_page_tag()
                                         url = BASE_URL.format(page=current_page)
                                         success = False
                                         for attempt in range(1, MAX_NAVIGATION_RETRIES + 1):
@@ -274,7 +255,7 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                                         index=False,
                                                         header=(current_page == start_page == 1 and not existing_file),
                                                 )
-                                        _write_next_page_tag(current_page + 1)
+                                        _write_sidecar(current_page + 1)
                                         pbar.update(1)
 
                         context.close()

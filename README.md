@@ -24,11 +24,13 @@ make run
 
 While running, a file `scraped_apps.csv` is updated after each page so you can
 inspect progress live. The script still prints the final pandas DataFrame to
-stdout with columns:
+stdout with columns.
 
-Existing `scraped_apps.csv` data is preserved between runs.
-The file ends with a `#NEXT_PAGE=<n>` line indicating the page to start from on the next execution.
-Edit the number or remove the line to restart from a different page.
+Progress (the next page to start from) is tracked in a sidecar file
+`scrape.next` (stored alongside the CSV). Existing `scraped_apps.csv` data is preserved between
+runs. To resume from a different page, edit the number inside
+`scrape.next`. The CSV no longer embeds `#NEXT_PAGE` markers and no
+inference is performed from CSV rows.
 
 - app name
 - app description
@@ -66,4 +68,3 @@ Remove the virtual environment:
 ```
 make clean
 ```
-

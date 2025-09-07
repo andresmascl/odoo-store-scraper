@@ -10,3 +10,5 @@ Makefile
 README.md
 CONTRIBUTING.md
 .gitignore
+*.csv
+*.next
