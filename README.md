@@ -26,6 +26,10 @@ While running, a file `scraped_apps.csv` is updated after each page so you can
 inspect progress live. The script still prints the final pandas DataFrame to
 stdout with columns:
 
+Existing `scraped_apps.csv` data is preserved between runs.
+The file ends with a `#NEXT_PAGE=<n>` line indicating the page to start from on the next execution.
+Edit the number or remove the line to restart from a different page.
+
 - app name
 - app description
 - app url
