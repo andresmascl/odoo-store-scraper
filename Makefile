@@ -21,7 +21,7 @@ run: $(PYTHON)
 	$(PYTHON) scraper/main.py
 
 docker-build:
-	docker build -t $(IMAGE) .
+	docker build --no-cache -t $(IMAGE) .
 
 docker-run:
 	docker run --rm -v $(PWD):/data -e CSV_PATH=/data/scraped_apps.csv $(IMAGE)
