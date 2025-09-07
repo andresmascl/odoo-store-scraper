@@ -121,8 +121,8 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 	"""Scrape summary information for all paid apps.
 
 	Args:
-			headless: Whether to run the browser in headless mode.
-			csv_path: Path where results are incrementally written.
+		headless: Whether to run the browser in headless mode.
+		csv_path: Path where results are incrementally written.
 	"""
 	records: list[dict] = []
 
@@ -155,14 +155,14 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 			browser = engine.launch(headless=headless)
 			# Ignore HTTPS issues and mimic a normal desktop browser to avoid bot heuristics
 			context = browser.new_context(
-					ignore_https_errors=True,
-					user_agent=DESKTOP_UA,
-					locale="en-US",
-					timezone_id="UTC",
-					viewport={"width": 1366, "height": 768},
-					device_scale_factor=1,
-					color_scheme="light",
-					extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+				ignore_https_errors=True,
+				user_agent=DESKTOP_UA,
+				locale="en-US",
+				timezone_id="UTC",
+				viewport={"width": 1366, "height": 768},
+				device_scale_factor=1,
+				color_scheme="light",
+				extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
 			)
 			page = context.new_page()
 			page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
