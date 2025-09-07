@@ -206,31 +206,45 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                                                 success = True
                                                                 break
                                                         except Exception:
-                                                                logging.warning(
-                                                                        "No cards detected on page %s after %s attempts. Skipping.",
+                                                                if attempt < MAX_NAVIGATION_RETRIES:
+                                                                        logging.warning(
+                                                                                "No cards detected on page %s (attempt %s/%s). Retrying...",
+                                                                                current_page,
+                                                                                attempt,
+                                                                                MAX_NAVIGATION_RETRIES,
+                                                                        )
+                                                                        time.sleep(RETRY_DELAY_SECONDS)
+                                                                        continue
+                                                                logging.error(
+                                                                        "No cards detected on page %s after %s attempts. Failing.",
                                                                         current_page,
                                                                         MAX_NAVIGATION_RETRIES,
-                                                                        )                                                                                                
-                                                                continue
+                                                                )
+                                                                raise RuntimeError(
+                                                                        f"No cards detected on page {current_page} after {MAX_NAVIGATION_RETRIES} attempts"
+                                                                )
                                                 except TimeoutError:
                                                         pass
                                                         time.sleep(RETRY_DELAY_SECONDS)
+                                        if not success:
+                                                raise RuntimeError(
+                                                        f"Failed to load page {current_page} after {MAX_NAVIGATION_RETRIES} attempts"
+                                                )
                                         # Prefer new loempia app card classes, with fallbacks
                                         cards = page.locator(
                                                 "div.loempia_app_entry.loempia_app_card[data-publish='on']"
                                         )
                                         count = cards.count()
                                         if count == 0:
-                                                logging.warning(
-                                                        "No app cards found on page %s. Capturing screenshot.",
+                                                logging.error(
+                                                        "No app cards found on page %s. Capturing screenshot and failing.",
                                                         current_page,
                                                 )
                                                 try:
                                                         page.screenshot(path=f"page_{current_page}_empty.png", full_page=True)
                                                 except Exception:
-                                                                pass
-                                                pbar.update(1)
-                                                continue
+                                                        pass
+                                                raise RuntimeError(f"No app cards found on page {current_page}")
 
                                         page_records: list[dict] = []
                                         for i in range(count):
