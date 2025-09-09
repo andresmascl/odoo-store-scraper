@@ -69,3 +69,7 @@ Remove the virtual environment:
 ```
 make clean
 ```
+
+## Disclaimer
+
+This project is for educational purposes only. Use it responsibly and in compliance with all applicable laws and the Odoo Terms of Service. The author and contributors are not responsible for any misuse or damages resulting from non-compliant use.
