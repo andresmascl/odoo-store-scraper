@@ -251,6 +251,7 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
 								current_page,
 								MAX_NAVIGATION_RETRIES,
 								)
+							#todo: make the app fail completely if navigation retries max are exceeded. 
 							raise RuntimeError(
 								f"No cards detected on page {current_page} after {MAX_NAVIGATION_RETRIES} attempts"
 								)
