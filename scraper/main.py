@@ -97,59 +97,54 @@ def parse_app_summary(card) -> dict:
         "units sold last month": last_month,
     }
 
-def get_detail_info(app_url: str, context) -> dict:
+def get_detail_info(app_url: str, detail_page) -> dict:
         """Visit app detail page and read details like 'Lines of code' and latest supported version.
 
         Returns a dict with keys:
         - 'lines of code'
         - 'last available version'
         """
-        page = context.new_page()
-        page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
+        detail_page.goto(app_url, wait_until="domcontentloaded")
+
+        # Lines of code
+        loc_selector = (
+                "table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
+                "td:nth-child(2) span"
+        )
+        loc = detail_page.locator(loc_selector).first
         try:
-                page.goto(app_url, wait_until="domcontentloaded")
+                loc_text = loc.text_content(timeout=LOC_TIMEOUT_MS)
+        except Exception:
+                loc_text = None
+        lines_of_code = (loc_text or "N/A").strip() or "N/A"
 
-                # Lines of code
-                loc_selector = (
-                        "table.loempia_app_table tr:has(td b:has-text('Lines of code')) "
-                        "td:nth-child(2) span"
-                )
-                loc = page.locator(loc_selector).first
-                try:
-                        loc_text = loc.text_content(timeout=LOC_TIMEOUT_MS)
-                except Exception:
-                        loc_text = None
-                lines_of_code = (loc_text or "N/A").strip() or "N/A"
+        # Latest supported version: collect all badge texts in the details table that look like versions
+        try:
+                badge_texts = detail_page.locator("table.loempia_app_table .badge").all_text_contents()
+        except Exception:
+                badge_texts = []
 
-                # Latest supported version: collect all badge texts in the details table that look like versions
-                try:
-                        badge_texts = page.locator("table.loempia_app_table .badge").all_text_contents()
-                except Exception:
-                        badge_texts = []
+        versions: list[tuple[int, int, str]] = []
+        for t in badge_texts:
+                if not t:
+                        continue
+                s = t.strip()
+                m = re.fullmatch(r"(\d+)\.(\d+)", s)
+                if m:
+                        major = int(m.group(1))
+                        minor = int(m.group(2))
+                        versions.append((major, minor, s))
 
-                versions: list[tuple[int, int, str]] = []
-                for t in badge_texts:
-                        if not t:
-                                continue
-                        s = t.strip()
-                        m = re.fullmatch(r"(\d+)\.(\d+)", s)
-                        if m:
-                                major = int(m.group(1))
-                                minor = int(m.group(2))
-                                versions.append((major, minor, s))
+        if versions:
+                latest = max(versions, key=lambda x: (x[0], x[1]))
+                latest_version = latest[2]
+        else:
+                latest_version = "N/A"
 
-                if versions:
-                        latest = max(versions, key=lambda x: (x[0], x[1]))
-                        latest_version = latest[2]
-                else:
-                        latest_version = "N/A"
-
-                return {
-                        "lines of code": lines_of_code,
-                        "last available version": latest_version,
-                }
-        finally:
-                page.close()
+        return {
+                "lines of code": lines_of_code,
+                "last available version": latest_version,
+        }
 
 def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -> pd.DataFrame:
         """Scrape summary information for all paid apps.
@@ -212,8 +207,11 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                         )
                         page = context.new_page()
                         page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
+                        detail_page = context.new_page()
+                        detail_page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
 
                         total_pages = get_total_pages(page)
+                        visited_urls: set[str] = set()
 
                         with tqdm(total=total_pages, desc="Scraping pages", initial=initial_progress) as pbar:
                                 for current_page in range(start_page, total_pages + 1):
@@ -283,13 +281,17 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                         for i in range(count):
                                                 card = cards.nth(i)
                                                 info = parse_app_summary(card)
+                                                app_url = info["app url"]
+                                                if app_url in visited_urls:
+                                                        continue
+                                                visited_urls.add(app_url)
                                                 try:
-                                                        details = get_detail_info(info["app url"], context)
+                                                        details = get_detail_info(app_url, detail_page)
                                                         info.update(details)
                                                 except Exception as e:
                                                         logging.warning(
                                                                         "Failed to parse details for %s: %s",
-                                                                        info["app url"],
+                                                                        app_url,
                                                                         e,
                                                                 )
                                                         info["lines of code"] = info.get("lines of code", "N/A")
@@ -308,6 +310,7 @@ def scrape_all_apps(headless: bool = True, csv_path: str = "scraped_apps.csv") -
                                         _write_sidecar(current_page + 1)
                                         pbar.update(1)
 
+                        detail_page.close()
                         context.close()
                         browser.close()
 
