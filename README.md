@@ -32,6 +32,10 @@ runs. To resume from a different page, edit the number inside
 `scrape.next`. The CSV no longer embeds `#NEXT_PAGE` markers and no
 inference is performed from CSV rows.
 
+Existing `scraped_apps.csv` data is preserved between runs.
+The file ends with a `#NEXT_PAGE=<n>` line indicating the page to start from on the next execution.
+Edit the number or remove the line to restart from a different page.
+
 - app name
 - app description
 - app url
